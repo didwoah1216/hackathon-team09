@@ -1,0 +1,586 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Dochestra</title>
+<meta name="description" content="문서 전용 노드를 끌어 놓아 견적서 처리 흐름을 만들고 결과를 비교하는 시제품">
+<style>
+:root{
+  --bg:#f5f6f8; --panel:#fff; --ink:#1c2230; --muted:#667085; --line:#d9dde5;
+  --brand:#2f5bea; --brand-soft:#e8eeff; --ok:#17803d; --ok-soft:#e3f6ea;
+  --warn:#9a6700; --warn-soft:#fff3c4; --bad:#c62828; --bad-soft:#fde8e8; --grid:#e9ecf2;
+}
+@media (prefers-color-scheme:dark){
+  :root:not([data-theme="light"]){color-scheme:dark;--bg:#12151c;--panel:#1a1f2a;--ink:#e8ebf2;--muted:#9aa3b5;--line:#2f3748;
+  --brand:#7b9bff;--brand-soft:#232c4a;--ok:#5fd68a;--ok-soft:#183324;--warn:#f2c14e;--warn-soft:#3a3115;
+  --bad:#ff8a80;--bad-soft:#40201f;--grid:#232a38}
+}
+:root[data-theme="dark"]{color-scheme:dark;--bg:#12151c;--panel:#1a1f2a;--ink:#e8ebf2;--muted:#9aa3b5;--line:#2f3748;
+  --brand:#7b9bff;--brand-soft:#232c4a;--ok:#5fd68a;--ok-soft:#183324;--warn:#f2c14e;--warn-soft:#3a3115;
+  --bad:#ff8a80;--bad-soft:#40201f;--grid:#232a38}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.55 system-ui,-apple-system,"Malgun Gothic","Apple SD Gothic Neo",sans-serif}
+header{padding:14px 16px;border-bottom:1px solid var(--line);background:var(--panel);display:flex;flex-wrap:wrap;gap:8px 16px;align-items:baseline}
+h1{font-size:20px;margin:0}
+header p{margin:0;color:var(--muted);font-size:13px}
+.badge{display:inline-block;font-size:11px;padding:1px 7px;border-radius:99px;background:var(--warn-soft);color:var(--warn);font-weight:600;vertical-align:middle}
+main{padding:12px 16px 40px;max-width:1280px;margin:0 auto}
+h2{font-size:16px;margin:20px 0 8px}
+.bar{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:10px}
+button,.btn{font:inherit;border:1px solid var(--line);background:var(--panel);color:var(--ink);border-radius:8px;padding:8px 12px;cursor:pointer;min-height:40px}
+button:hover{border-color:var(--brand)}
+button.primary{background:var(--brand);border-color:var(--brand);color:#fff;font-weight:600}
+button.danger{color:var(--bad)}
+button:disabled{opacity:.45;cursor:not-allowed}
+.editor{display:grid;grid-template-columns:170px minmax(0,1fr) 280px;gap:10px}
+.box{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:10px}
+.box h3{margin:0 0 8px;font-size:13px;color:var(--muted);font-weight:600}
+.palette{display:flex;flex-direction:column;gap:6px}
+.pitem{display:flex;gap:8px;align-items:center;text-align:left;cursor:grab}
+.num{width:22px;height:22px;border-radius:50%;background:var(--brand-soft);color:var(--brand);font-size:12px;font-weight:700;display:grid;place-items:center;flex:none}
+#canvas{position:relative;height:430px;overflow:auto;border:1px solid var(--line);border-radius:10px;
+  background-color:var(--panel);background-image:radial-gradient(var(--grid) 1px,transparent 1px);background-size:18px 18px;touch-action:pan-x pan-y}
+#stage{position:relative;width:960px;height:560px}
+#edges{position:absolute;inset:0;width:100%;height:100%;pointer-events:none;overflow:visible}
+#edges path{fill:none;stroke:var(--brand);stroke-width:2.5;pointer-events:stroke;cursor:pointer}
+#edges path.bad{stroke:var(--bad);stroke-dasharray:6 4}
+#edges path.sel{stroke-width:4.5}
+#edges path.temp{stroke-dasharray:4 4;pointer-events:none;opacity:.7}
+.node{position:absolute;width:156px;height:66px;background:var(--panel);border:2px solid var(--line);border-radius:10px;padding:6px 14px;cursor:grab;touch-action:none;user-select:none}
+.node.sel{border-color:var(--brand);box-shadow:0 0 0 3px var(--brand-soft)}
+.node.dragging{cursor:grabbing}
+.node b{display:block;font-size:14px}
+.node small{color:var(--muted);font-size:11px;display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.node.st-done{border-color:var(--ok)} .node.st-warn{border-color:var(--warn)} .node.st-fail{border-color:var(--bad)}
+.port{position:absolute;top:22px;width:22px;height:22px;border-radius:50%;background:var(--panel);border:3px solid var(--brand);touch-action:none;cursor:crosshair}
+.port.in{left:-12px} .port.out{right:-12px}
+.port.armed{background:var(--brand)}
+.settings label{display:flex;gap:8px;align-items:flex-start;margin:6px 0;font-size:14px}
+.settings input[type=text]{width:100%;font:inherit;padding:7px;border:1px solid var(--line);border-radius:6px;background:var(--bg);color:var(--ink)}
+.hint{color:var(--muted);font-size:12px;margin:6px 0}
+.msg{margin:8px 0;padding:8px 12px;border-radius:8px;font-size:14px}
+.msg.err{background:var(--bad-soft);color:var(--bad)} .msg.ok{background:var(--ok-soft);color:var(--ok)}
+.steps{display:flex;flex-wrap:wrap;gap:6px;margin:8px 0}
+.chip{padding:3px 10px;border-radius:99px;font-size:13px;border:1px solid var(--line)}
+.chip.done{background:var(--ok-soft);color:var(--ok);border-color:transparent}
+.chip.warn{background:var(--warn-soft);color:var(--warn);border-color:transparent}
+.chip.fail{background:var(--bad-soft);color:var(--bad);border-color:transparent}
+.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:8px;margin:8px 0}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:10px 12px}
+.card span{display:block;color:var(--muted);font-size:12px} .card strong{font-size:20px}
+.tablewrap{overflow-x:auto;border:1px solid var(--line);border-radius:10px;background:var(--panel)}
+table{border-collapse:collapse;width:100%;font-size:14px;white-space:nowrap}
+th,td{padding:8px 10px;border-bottom:1px solid var(--line);text-align:left}
+th{background:var(--bg);font-size:12px;color:var(--muted)}
+td.w{background:var(--warn-soft);color:var(--warn);font-weight:600}
+tr.clickable{cursor:pointer} tr.clickable:hover td{background:var(--brand-soft)}
+td.r{text-align:right}
+.vok{color:var(--ok);font-weight:600} .vwarn{color:var(--warn);font-weight:600} .vskip{color:var(--muted)}
+pre#src{margin:0;padding:10px;background:var(--bg);border:1px solid var(--line);border-radius:8px;white-space:pre-wrap;font:13px/1.6 ui-monospace,Consolas,monospace}
+pre#src mark{background:var(--warn-soft);color:var(--warn);display:block}
+.notes{color:var(--muted);font-size:13px;margin-top:20px}
+#btnSettings{display:none}
+.msg.info{background:var(--brand-soft);color:var(--brand)}
+button:focus-visible,input:focus-visible,tr.clickable:focus-visible,.btn:focus-within{outline:3px solid var(--brand);outline-offset:2px}
+#edges path.hit{stroke:transparent;stroke-width:24}
+td:first-child,th:first-child{position:sticky;left:0;background:var(--panel);z-index:1}
+th:first-child{background:var(--bg)}
+@media (max-width:860px){
+  .editor{grid-template-columns:minmax(0,1fr)}
+  .editor>*{min-width:0}
+  .palette{flex-direction:row;overflow-x:auto;padding-bottom:4px}
+  .pitem{flex:none}
+  #canvas{height:380px}
+  button,.btn{min-height:46px;font-size:16px;padding:10px 14px}
+  .port{width:32px;height:32px;top:17px}
+  .port.in{left:-17px} .port.out{right:-17px}
+  .settings label{font-size:16px;min-height:38px;align-items:center}
+  .settings input[type=checkbox]{width:20px;height:20px}
+  .settings input[type=text]{font-size:16px;padding:10px}
+  .node b{font-size:15px} .node small{font-size:12px}
+  table{font-size:15px}
+  #btnSettings{display:inline-block}
+}
+</style>
+</head>
+<body>
+<header>
+  <h1>Dochestra</h1>
+  <p>문서 전용 노드로 견적서 처리 흐름을 만들고 결과를 비교하는 시제품</p>
+  <span class="badge">샘플 데이터 · 서버 없음</span>
+</header>
+<main>
+  <h2>① 처리 흐름 만들기</h2>
+  <p class="hint">왼쪽 노드를 누르거나(PC는 끌어서) 캔버스에 놓고, 노드 오른쪽 동그라미에서 다음 노드 왼쪽 동그라미로 이어 주세요. 모바일은 두 동그라미를 차례로 탭하면 연결돼요.</p>
+  <div class="bar">
+    <button id="btnRun" class="primary">▶ 실행</button>
+    <button id="btnReset">기본 흐름으로 되돌리기</button>
+    <button id="btnDel" class="danger" disabled>선택 삭제</button>
+    <button id="btnSettings" disabled>⚙ 노드 설정으로 이동</button>
+    <label class="btn">샘플 대신 내 .txt 추가<input id="file" type="file" accept=".txt,text/plain" multiple hidden></label>
+  </div>
+  <div class="editor">
+    <div class="box"><h3>노드 팔레트</h3><div class="palette" id="palette"></div></div>
+    <div id="canvas"><div id="stage"><svg id="edges"></svg></div></div>
+    <div class="box settings" id="settingsBox"><h3>노드 설정</h3><div id="settings"><p class="hint">노드를 선택하면 설정이 보여요.</p></div></div>
+  </div>
+  <div id="flowMsg"></div>
+
+  <h2>② 실행 결과</h2>
+  <div id="result"><p class="hint">[실행]을 누르면 결과가 여기에 나와요.</p></div>
+
+  <p class="notes">모든 문서·업체명·금액은 <b>샘플 데이터</b>이며 실제 기업 데이터가 아니에요. 이 시제품은 텍스트 문서에서 "항목: 값" 줄을 읽어요(실제 OCR·문서 AI 연동은 범위 밖). 흐름은 이 브라우저에만 저장돼요.</p>
+</main>
+
+<script>
+(function(){
+"use strict";
+/* ---------- 정의 ---------- */
+var TYPES={
+  load:{name:"문서 불러오기",rank:1,desc:"처리할 문서를 읽어와요"},
+  classify:{name:"문서 분류",rank:2,desc:"문서 유형을 가려내요"},
+  extract:{name:"항목 추출",rank:3,desc:"필요한 항목을 뽑아요"},
+  validate:{name:"검증 규칙",rank:4,desc:"규칙으로 오류를 찾아요"},
+  exp:{name:"결과 내보내기",rank:5,desc:"표로 보고 CSV로 저장"}
+};
+var FIELDS=["공급업체명","견적번호","품목","수량","단가","합계","납기일","납기요청일"];
+var RULES=[
+  {id:"required",label:"선택한 항목에 빈 값 없음"},
+  {id:"sum",label:"수량 × 단가 = 합계"},
+  {id:"date",label:"납기일 ≤ 납기요청일"}
+];
+function sample(co,no,unit,total,dlv){
+  return "견적서\n견적번호: "+no+"\n공급업체명: "+co+"\n품목: 베어링 6204\n수량: 500\n단가: "+unit+"\n합계: "+total+"\n"+(dlv?"납기일: "+dlv+"\n":"")+"납기요청일: 2026-12-15\n";
+}
+var SAMPLES=[
+  {name:"샘플1_가나다정밀.txt",text:sample("가나다정밀(샘플)","Q-001","2,400","1,200,000","2026-12-10")},
+  {name:"샘플2_라마베어링.txt",text:sample("라마베어링(샘플)","Q-002","2,300","1,250,000","2026-12-12")},
+  {name:"샘플3_사아부품.txt",text:sample("사아부품(샘플)","Q-003","2,250","1,125,000","2026-12-14")},
+  {name:"샘플4_자차산업.txt",text:sample("자차산업(샘플)","Q-004","2,100","1,050,000","")},
+  {name:"샘플5_카타기계.txt",text:sample("카타기계(샘플)","Q-005","2,600","1,300,000","2026-12-09")}
+];
+var uploads=[];
+
+/* ---------- 상태 ---------- */
+var KEY="dochestra.flow.v1";
+function defaultFlow(){
+  return {
+    nodes:[
+      {id:"n1",type:"load",x:20,y:30,cfg:{useSample:true}},
+      {id:"n2",type:"classify",x:210,y:130,cfg:{keyword:"견적서"}},
+      {id:"n3",type:"extract",x:400,y:30,cfg:{fields:FIELDS.slice()}},
+      {id:"n4",type:"validate",x:590,y:130,cfg:{rules:["required","sum","date"]}},
+      {id:"n5",type:"exp",x:780,y:30,cfg:{}}
+    ],
+    edges:[["n1","n2"],["n2","n3"],["n3","n4"],["n4","n5"]],
+    seq:6
+  };
+}
+var flow;
+try{ var s=localStorage.getItem(KEY); flow=sanitize(s?JSON.parse(s):null); }catch(e){ flow=defaultFlow(); }
+function sanitize(f){
+  if(!f||!Array.isArray(f.nodes)||!Array.isArray(f.edges)) return defaultFlow();
+  var ids={}, mx=0;
+  f.nodes=f.nodes.filter(function(n){ return n&&TYPES[n.type]&&typeof n.id==="string"; });
+  f.nodes.forEach(function(n){
+    ids[n.id]=1; var m=/^n(\d+)$/.exec(n.id); if(m) mx=Math.max(mx,+m[1]);
+    n.x=+n.x||0; n.y=+n.y||0;
+    n.cfg=Object.assign(defaultCfg(n.type),n.cfg&&typeof n.cfg==="object"?n.cfg:{});
+    if(n.type==="extract") n.cfg.fields=(Array.isArray(n.cfg.fields)?n.cfg.fields:[]).filter(function(x){return FIELDS.indexOf(x)>=0;});
+    if(n.type==="validate") n.cfg.rules=(Array.isArray(n.cfg.rules)?n.cfg.rules:[]).filter(function(x){return RULES.some(function(r){return r.id===x;});});
+  });
+  f.edges=f.edges.filter(function(e){ return Array.isArray(e)&&ids[e[0]]&&ids[e[1]]; });
+  f.seq=Math.max(+f.seq||0,mx+1);
+  return f;
+}
+var selNode=null, selEdge=null, pending=null, statuses={}, lastRows=null;
+function save(){ try{ localStorage.setItem(KEY,JSON.stringify(flow)); }catch(e){} }
+function hint(t){ $("flowMsg").innerHTML=t?'<div class="msg info">'+esc(t)+'</div>':""; }
+function refreshNodes(){
+  flow.nodes.forEach(function(n){
+    var el=document.querySelector('.node[data-id="'+n.id+'"]'); if(!el) return;
+    el.className=el.className.replace(/\bst-\w+/g,"").trim()+(statuses[n.id]?" st-"+statuses[n.id]:"");
+    el.querySelector("small").textContent=summary(n);
+  });
+}
+function changed(){
+  save(); hint("");
+  statuses={}; refreshNodes();
+  if(lastRows&&!$("stale")){
+    var b=document.createElement("div"); b.id="stale"; b.className="msg err";
+    b.textContent="흐름이 바뀌었어요. 아래 결과는 이전 흐름 기준이에요. [▶ 실행]을 눌러 새로 만드세요.";
+    $("result").insertBefore(b,$("result").firstChild);
+  }
+}
+function $(id){ return document.getElementById(id); }
+function nodeById(id){ return flow.nodes.filter(function(n){return n.id===id;})[0]; }
+function esc(t){ return String(t).replace(/[&<>"]/g,function(c){return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c];}); }
+var NW=156, NH=66;
+
+/* ---------- 팔레트 ---------- */
+(function(){
+  var p=$("palette"); var i=0;
+  Object.keys(TYPES).forEach(function(k){
+    i++;
+    var b=document.createElement("button");
+    b.className="pitem"; b.draggable=true; b.dataset.type=k;
+    b.innerHTML='<span class="num">'+i+'</span><span>'+TYPES[k].name+'</span>';
+    b.addEventListener("click",function(){ addNode(k); });
+    b.addEventListener("dragstart",function(e){ e.dataTransfer.setData("text/plain",k); });
+    p.appendChild(b);
+  });
+  var c=$("canvas");
+  c.addEventListener("dragover",function(e){ e.preventDefault(); });
+  c.addEventListener("drop",function(e){
+    e.preventDefault();
+    var k=e.dataTransfer.getData("text/plain"); if(!TYPES[k]) return;
+    var r=$("stage").getBoundingClientRect();
+    addNode(k,e.clientX-r.left-NW/2,e.clientY-r.top-NH/2);
+  });
+})();
+function defaultCfg(t){
+  if(t==="load") return {useSample:true};
+  if(t==="classify") return {keyword:"견적서"};
+  if(t==="extract") return {fields:FIELDS.slice()};
+  if(t==="validate") return {rules:["required","sum","date"]};
+  return {};
+}
+function addNode(t,x,y){
+  var n={id:"n"+(flow.seq++),type:t,x:0,y:0,cfg:defaultCfg(t)};
+  if(x==null){ var k=flow.nodes.length; x=20+(k%5)*40; y=250+Math.floor(k/5)*30+(k%2)*60; }
+  n.x=Math.max(0,Math.min(960-NW,x)); n.y=Math.max(0,Math.min(560-NH,y));
+  flow.nodes.push(n); selNode=n.id; selEdge=null; changed(); render();
+}
+
+/* ---------- 렌더 ---------- */
+function summary(n){
+  var c=n.cfg, ic={done:"✓ ",warn:"⚠ ",fail:"✕ "}[statuses[n.id]]||"";
+  return ic+summaryText(n);
+}
+function summaryText(n){
+  var c=n.cfg;
+  if(n.type==="load") return (c.useSample?"샘플 5장":"샘플 끔")+(uploads.length?" + 내 파일 "+uploads.length:"");
+  if(n.type==="classify") return "키워드: "+(c.keyword||"(없음)");
+  if(n.type==="extract") return c.fields.length+"개 항목";
+  if(n.type==="validate") return c.rules.length+"개 규칙";
+  return "표 · CSV";
+}
+function render(){
+  var stage=$("stage");
+  Array.prototype.slice.call(stage.querySelectorAll(".node")).forEach(function(e){ e.remove(); });
+  flow.nodes.forEach(function(n){
+    var d=document.createElement("div");
+    d.className="node"+(n.id===selNode?" sel":"")+(statuses[n.id]?" st-"+statuses[n.id]:"");
+    d.dataset.id=n.id; d.style.left=n.x+"px"; d.style.top=n.y+"px";
+    d.innerHTML='<div class="port in" data-port="in" role="button" aria-label="'+TYPES[n.type].name+' 입력 연결점"></div><b>'+TYPES[n.type].name+'</b><small>'+esc(summary(n))+'</small><div class="port out'+(pending===n.id?" armed":"")+'" data-port="out" role="button" aria-label="'+TYPES[n.type].name+' 출력 연결점"></div>';
+    stage.appendChild(d);
+  });
+  drawEdges(); renderSettings();
+  $("btnDel").disabled=!(selNode||selEdge!==null);
+  $("btnSettings").disabled=!selNode;
+}
+function bez(a,b){
+  var x1=a.x+NW+0, y1=a.y+NH/2, x2=b.x-0, y2=b.y+NH/2, dx=Math.max(40,Math.abs(x2-x1)/2);
+  return "M"+x1+","+y1+" C"+(x1+dx)+","+y1+" "+(x2-dx)+","+y2+" "+x2+","+y2;
+}
+function edgeBad(e){ var a=nodeById(e[0]),b=nodeById(e[1]); return !a||!b||TYPES[a.type].rank>=TYPES[b.type].rank; }
+function drawEdges(extra){
+  var h="";
+  flow.edges.forEach(function(e,i){
+    var a=nodeById(e[0]),b=nodeById(e[1]); if(!a||!b) return;
+    h+='<path data-i="'+i+'" class="hit" d="'+bez(a,b)+'"/>';
+    h+='<path data-i="'+i+'" class="'+(edgeBad(e)?"bad":"")+(selEdge===i?" sel":"")+'" d="'+bez(a,b)+'"/>';
+  });
+  if(extra) h+=extra;
+  $("edges").innerHTML=h;
+  Array.prototype.slice.call($("edges").querySelectorAll("path[data-i]")).forEach(function(p){
+    p.addEventListener("click",function(ev){ ev.stopPropagation(); selEdge=+p.dataset.i; selNode=null; render(); });
+  });
+}
+$("canvas").addEventListener("pointerdown",function(e){
+  if(e.target===$("canvas")||e.target===$("stage")||e.target===$("edges")){ selNode=null; selEdge=null; pending=null; render(); }
+});
+
+/* ---------- 노드 이동 · 연결 ---------- */
+var drag=null;
+$("stage").addEventListener("pointerdown",function(e){
+  var nd=e.target.closest(".node"); if(!nd) return;
+  var n=nodeById(nd.dataset.id); var port=e.target.dataset.port;
+  var r=$("stage").getBoundingClientRect();
+  if(port==="out"||port==="in"){
+    drag={mode:"link",port:port,from:n.id,sx:e.clientX,sy:e.clientY,moved:false};
+    try{ e.target.setPointerCapture(e.pointerId); }catch(x){}
+    e.preventDefault(); return;
+  }
+  selNode=n.id; selEdge=null;
+  drag={mode:"move",id:n.id,ox:e.clientX-r.left-n.x,oy:e.clientY-r.top-n.y,moved:false,el:nd};
+  nd.classList.add("dragging");
+  try{ nd.setPointerCapture(e.pointerId); }catch(x){}
+  renderSettings(); $("btnDel").disabled=false; $("btnSettings").disabled=false;
+  Array.prototype.slice.call(document.querySelectorAll(".node.sel")).forEach(function(x){x.classList.remove("sel");}); nd.classList.add("sel");
+});
+window.addEventListener("pointermove",function(e){
+  if(!drag) return;
+  var r=$("stage").getBoundingClientRect();
+  if(drag.mode==="move"){
+    var n=nodeById(drag.id); drag.moved=true;
+    n.x=Math.max(0,Math.min(960-NW,e.clientX-r.left-drag.ox));
+    n.y=Math.max(0,Math.min(560-NH,e.clientY-r.top-drag.oy));
+    drag.el.style.left=n.x+"px"; drag.el.style.top=n.y+"px"; drawEdges();
+  }else{
+    if(Math.abs(e.clientX-drag.sx)+Math.abs(e.clientY-drag.sy)>6) drag.moved=true;
+    if(drag.moved){
+      var a=nodeById(drag.from), x1,y1;
+      if(drag.port==="out"){ x1=a.x+NW; y1=a.y+NH/2; } else { x1=a.x; y1=a.y+NH/2; }
+      var x2=e.clientX-r.left, y2=e.clientY-r.top;
+      drawEdges('<path class="temp" d="M'+x1+','+y1+' L'+x2+','+y2+'"/>');
+    }
+  }
+});
+window.addEventListener("pointerup",function(e){
+  if(!drag) return; var d=drag; drag=null;
+  if(d.mode==="move"){ d.el.classList.remove("dragging"); save(); return; }
+  if(d.moved){
+    var t=document.elementFromPoint(e.clientX,e.clientY);
+    var nd=t&&t.closest?t.closest(".node"):null;
+    if(nd&&nd.dataset.id!==d.from&&t.dataset.port&&t.dataset.port!==d.port){
+      if(d.port==="out") connect(d.from,nd.dataset.id); else connect(nd.dataset.id,d.from);
+    }else drawEdges();
+    pending=null; render();
+  }else{
+    /* 탭: 모바일용 두 번 탭 연결 */
+    if(d.port==="out"){ pending=(pending===d.from)?null:d.from; render(); hint(pending?"이어질 노드의 왼쪽 동그라미를 누르세요.":""); }
+    else if(pending&&pending!==d.from){ connect(pending,d.from); pending=null; render(); }
+    else if(!pending){ hint("먼저 보내는 노드의 오른쪽 동그라미를 누르세요."); }
+  }
+});
+function connect(a,b){
+  flow.edges=flow.edges.filter(function(e){ return e[0]!==a&&e[1]!==b; });
+  flow.edges.push([a,b]); selEdge=null; changed();
+}
+$("btnDel").addEventListener("click",function(){
+  if(selNode){ flow.nodes=flow.nodes.filter(function(n){return n.id!==selNode;}); flow.edges=flow.edges.filter(function(e){return e[0]!==selNode&&e[1]!==selNode;}); selNode=null; }
+  else if(selEdge!==null){ flow.edges.splice(selEdge,1); selEdge=null; }
+  changed(); render();
+});
+document.addEventListener("keydown",function(e){
+  if((e.key==="Delete"||e.key==="Backspace")&&!/INPUT|TEXTAREA/.test((e.target.tagName||""))&&!$("btnDel").disabled){ $("btnDel").click(); }
+});
+$("btnReset").addEventListener("click",function(){ flow=defaultFlow(); selNode=selEdge=pending=null; statuses={}; save(); run(); });
+$("btnSettings").addEventListener("click",function(){ $("settingsBox").scrollIntoView({behavior:"smooth",block:"start"}); });
+
+/* ---------- 설정 패널 ---------- */
+function renderSettings(){
+  var box=$("settings"); var n=selNode&&nodeById(selNode);
+  if(!n){ box.innerHTML='<p class="hint">노드를 선택하면 설정이 보여요.</p>'; return; }
+  var h='<b>'+TYPES[n.type].name+'</b><p class="hint">'+TYPES[n.type].desc+'</p>';
+  if(n.type==="load"){
+    h+='<label><input type="checkbox" data-k="useSample"'+(n.cfg.useSample?" checked":"")+'> 샘플 견적서 5장 사용 <span class="badge">샘플 데이터</span></label>';
+    h+='<p class="hint">내가 올린 .txt: '+uploads.length+'개 (위 [내 .txt 추가] 버튼)</p>';
+  }else if(n.type==="classify"){
+    h+='<label style="display:block">문서에 이 단어가 있으면 통과<input type="text" data-k="keyword" value="'+esc(n.cfg.keyword||"")+'"></label>';
+  }else if(n.type==="extract"){
+    FIELDS.forEach(function(f){ h+='<label><input type="checkbox" data-f="'+f+'"'+(n.cfg.fields.indexOf(f)>=0?" checked":"")+'> '+f+'</label>'; });
+  }else if(n.type==="validate"){
+    RULES.forEach(function(r){ h+='<label><input type="checkbox" data-r="'+r.id+'"'+(n.cfg.rules.indexOf(r.id)>=0?" checked":"")+'> '+r.label+'</label>'; });
+    h+='<p class="hint">규칙에 필요한 항목(수량·단가·합계·납기일·납기요청일)을 추출하지 않으면 해당 규칙은 "건너뜀"으로 표시돼요.</p>';
+  }else{
+    h+='<p class="hint">실행 결과 표 아래에서 CSV를 내려받아요.</p>';
+  }
+  box.innerHTML=h;
+  Array.prototype.slice.call(box.querySelectorAll("input")).forEach(function(i){
+    i.addEventListener("input",function(){
+      if(i.dataset.k==="useSample") n.cfg.useSample=i.checked;
+      else if(i.dataset.k==="keyword") n.cfg.keyword=i.value;
+      else if(i.dataset.f){ toggle(n.cfg.fields,i.dataset.f,i.checked); n.cfg.fields.sort(function(a,b){return FIELDS.indexOf(a)-FIELDS.indexOf(b);}); }
+      else if(i.dataset.r) toggle(n.cfg.rules,i.dataset.r,i.checked);
+      changed();
+    });
+  });
+}
+function toggle(arr,v,on){ var i=arr.indexOf(v); if(on&&i<0) arr.push(v); if(!on&&i>=0) arr.splice(i,1); }
+
+$("file").addEventListener("change",function(e){
+  Array.prototype.slice.call(e.target.files).forEach(function(f){
+    if(f.size>300000){ hint(f.name+" 파일이 너무 커요. 300KB 이하 .txt만 읽어요."); return; }
+    var r=new FileReader();
+    r.onload=function(){ uploads.push({name:f.name,text:String(r.result||"")}); changed(); render(); };
+    r.readAsText(f);
+  });
+  e.target.value="";
+});
+
+/* ---------- 흐름 검사 · 실행 ---------- */
+function getChain(){
+  if(!flow.nodes.length) return {err:"노드가 없어요. 팔레트에서 노드를 추가해 주세요."};
+  var bad=flow.edges.filter(edgeBad);
+  if(bad.length) return {err:"순서가 맞지 않는 연결(빨간 점선)이 있어요. 불러오기 → 분류 → 추출 → 검증 → 내보내기 순서로 이어 주세요."};
+  var hasIn={}; flow.edges.forEach(function(e){ hasIn[e[1]]=1; });
+  var starts=flow.nodes.filter(function(n){return !hasIn[n.id];});
+  if(starts.length!==1) return {err:"시작 노드가 하나여야 해요. 끊어진 노드가 없는지 확인해 주세요."};
+  var chain=[starts[0]], cur=starts[0];
+  for(;;){
+    var e=flow.edges.filter(function(x){return x[0]===cur.id;})[0];
+    if(!e) break; cur=nodeById(e[1]); chain.push(cur);
+    if(chain.length>20) break;
+  }
+  if(chain.length!==flow.nodes.length) return {err:"모든 노드가 한 줄로 이어져야 해요."};
+  if(chain[0].type!=="load") return {err:"첫 노드는 '문서 불러오기'여야 해요."};
+  if(!chain.some(function(n){return n.type==="extract";})) return {err:"'항목 추출' 노드가 필요해요."};
+  if(chain[chain.length-1].type!=="exp") return {err:"마지막은 '결과 내보내기'여야 해요."};
+  return {chain:chain};
+}
+function parseDoc(text,fields){
+  var lines=text.split(/\r?\n/), out={}, at={};
+  fields.forEach(function(f){
+    for(var i=0;i<lines.length;i++){
+      var m=lines[i].match(/^\s*([^:：]+?)\s*[:：]\s*(.*?)\s*$/);
+      if(m&&m[1]===f){ out[f]=m[2]; at[f]=i; return; }
+    }
+    out[f]=""; at[f]=-1;
+  });
+  return {v:out,at:at};
+}
+function num(s){ var t=String(s||"").replace(/[^\d.-]/g,""); return t===""?NaN:Number(t); }
+function fmt(n){ return isFinite(n)?n.toLocaleString("ko-KR")+"원":"-"; }
+
+function run(){
+  statuses={}; $("flowMsg").innerHTML="";
+  var c=getChain();
+  if(c.err){ $("flowMsg").innerHTML='<div class="msg err">'+esc(c.err)+'</div>'; $("result").innerHTML='<p class="hint">흐름을 고친 뒤 다시 실행해 주세요.</p>'; render(); return; }
+  var docs=[], steps=[], rows=[];
+  var fields=FIELDS.slice(), rules=[], classifyKw=null, extractNode=null;
+  c.chain.forEach(function(n){
+    if(n.type==="load"){
+      if(n.cfg.useSample) SAMPLES.forEach(function(s){ docs.push({name:s.name,text:s.text,sample:true}); });
+      uploads.forEach(function(u){ docs.push({name:u.name,text:u.text,sample:false}); });
+      steps.push([n,docs.length?"done":"fail",docs.length+"건 불러옴"]);
+      statuses[n.id]=docs.length?"done":"fail";
+    }else if(n.type==="classify"){
+      classifyKw=n.cfg.keyword||""; var before=docs.length;
+      docs=docs.filter(function(d){ return !classifyKw||d.text.indexOf(classifyKw)>=0; });
+      var skipped=before-docs.length;
+      steps.push([n,skipped?"warn":"done",docs.length+"건 통과"+(skipped?", "+skipped+"건 제외":"")]);
+      statuses[n.id]=skipped?"warn":"done";
+    }else if(n.type==="extract"){
+      fields=n.cfg.fields.slice(); extractNode=n;
+    }else if(n.type==="validate"){
+      rules=n.cfg.rules.slice();
+    }
+  });
+  /* 추출 */
+  var allFields=extractNode?fields:[];
+  if(!allFields.length){
+    statuses[extractNode.id]="fail";
+    $("flowMsg").innerHTML='<div class="msg err">추출할 항목을 1개 이상 선택해 주세요. (항목 추출 노드를 눌러 설정)</div>';
+    $("result").innerHTML='<p class="hint">항목을 선택한 뒤 다시 실행해 주세요.</p>'; render(); return;
+  }
+  docs.forEach(function(d){
+    var p=parseDoc(d.text,FIELDS); /* 검증용으로 전부 읽고 표시만 선택 */
+    rows.push({doc:d,v:p.v,at:p.at,warn:{},checks:[]});
+  });
+  c.chain.forEach(function(n){
+    if(n.type==="extract"){ steps.push([n,"done",rows.length+"건 · "+allFields.length+"개 항목"]); statuses[n.id]="done"; }
+  });
+  /* 검증 */
+  var warnTotal=0, vNode=c.chain.filter(function(n){return n.type==="validate";})[0];
+  rows.forEach(function(r){
+    var shown=function(f){ return allFields.indexOf(f)>=0; };
+    if(rules.indexOf("required")>=0) allFields.forEach(function(f){
+      if(!r.v[f]){ r.warn[f]="비어 있음"; r.checks.push(f+" 없음"); }
+    });
+    if(rules.indexOf("sum")>=0){
+      if(shown("수량")&&shown("단가")&&shown("합계")){
+        var q=num(r.v["수량"]),u=num(r.v["단가"]),t=num(r.v["합계"]);
+        var badNum=false;
+        ["수량","단가","합계"].forEach(function(k){ if(r.v[k]&&!isFinite(num(r.v[k]))){ r.warn[k]="숫자가 아님"; badNum=true; } });
+        if(badNum) r.checks.push("숫자 형식 오류");
+        else if(isFinite(q)&&isFinite(u)&&isFinite(t)&&q*u!==t){ r.warn["합계"]="계산값 "+fmt(q*u)+"과 다름"; r.checks.push("합계 불일치"); }
+      }else r.checks.push("합계 규칙 건너뜀");
+    }
+    if(rules.indexOf("date")>=0){
+      if(shown("납기일")&&shown("납기요청일")){
+        var a=r.v["납기일"],b=r.v["납기요청일"];
+        var dre=/^\d{4}-\d{2}-\d{2}$/, badDate=false;
+        if(a&&!dre.test(a)){ r.warn["납기일"]="YYYY-MM-DD 형식이 아님"; badDate=true; }
+        if(b&&!dre.test(b)){ r.warn["납기요청일"]="YYYY-MM-DD 형식이 아님"; badDate=true; }
+        if(badDate) r.checks.push("날짜 형식 오류");
+        else if(a&&b&&a>b){ r.warn["납기일"]="요청일보다 늦음"; r.checks.push("납기 초과"); }
+      }else r.checks.push("납기 규칙 건너뜀");
+    }
+    var real=r.checks.filter(function(x){return x.indexOf("건너뜀")<0;});
+    r.status=real.length?"warn":"ok"; r.real=real;
+    if(real.length) warnTotal++;
+  });
+  if(vNode){ steps.push([vNode,warnTotal?"warn":"done",warnTotal?warnTotal+"건 경고":"모두 통과"]); statuses[vNode.id]=warnTotal?"warn":"done"; }
+  c.chain.forEach(function(n){ if(n.type==="exp"){ steps.push([n,"done","결과 표 생성"]); statuses[n.id]="done"; } });
+  lastRows={rows:rows,fields:allFields,rules:rules,warnTotal:warnTotal};
+  showResult(steps);
+  render();
+}
+function showResult(steps){
+  var R=lastRows, rows=R.rows, f=R.fields;
+  var ok=rows.filter(function(r){return r.status==="ok"&&f.indexOf("합계")>=0&&isFinite(num(r.v["합계"]));});
+  var best=null; ok.forEach(function(r){ if(!best||num(r.v["합계"])<num(best.v["합계"])) best=r; });
+  var h='<div class="steps">'+steps.map(function(s){ return '<span class="chip '+s[1]+'">'+TYPES[s[0].type].name+' · '+esc(s[2])+'</span>'; }).join("")+'</div>';
+  h+='<div class="cards"><div class="card"><span>처리 문서 수</span><strong>'+rows.length+'건</strong></div>'+
+     '<div class="card"><span>경고 수</span><strong>'+R.warnTotal+'건</strong></div>'+
+     '<div class="card"><span>최저가 공급업체 (검증 통과분)</span><strong>'+(best?esc(best.v["공급업체명"]||best.doc.name)+'<br><small>'+fmt(num(best.v["합계"]))+'</small>':'-')+'</strong></div></div>';
+  if(!rows.length){ h+='<div class="msg err">처리할 문서가 없어요. 문서 불러오기 설정을 확인해 주세요.</div>'; $("result").innerHTML=h; return; }
+  h+='<div class="tablewrap"><table><thead><tr><th>문서</th>'+f.map(function(x){return '<th>'+x+'</th>';}).join("")+'<th>검증</th></tr></thead><tbody>';
+  rows.forEach(function(r,i){
+    h+='<tr class="clickable" tabindex="0" data-i="'+i+'"><td>'+esc(r.doc.name)+(r.doc.sample?' <span class="badge">샘플</span>':'')+'</td>';
+    f.forEach(function(x){
+      var w=r.warn[x], right=(x==="수량"||x==="단가"||x==="합계");
+      h+='<td class="'+(w?"w":"")+(right?" r":"")+'"'+(w?' title="'+esc(w)+'"':"")+'>'+(w?"⚠ ":"")+esc(r.v[x]||(w?"(없음)":"-"))+'</td>';
+    });
+    h+='<td>'+(r.real.length?'<span class="vwarn">⚠ '+esc(r.real.join(", "))+'</span>':'<span class="vok">✓ 통과</span>')+(r.checks.some(function(x){return x.indexOf("건너뜀")>=0;})?' <span class="vskip">('+esc(r.checks.filter(function(x){return x.indexOf("건너뜀")>=0;}).join(", "))+')</span>':'')+'</td></tr>';
+  });
+  h+='</tbody></table></div>';
+  h+='<div class="bar" style="margin-top:10px"><button id="btnCsv" class="primary">CSV 저장·복사</button><span class="hint">행을 누르면 원문과 문제 위치를 볼 수 있어요.</span></div>';
+  h+='<div id="srcbox"></div>';
+  $("result").innerHTML=h;
+  $("btnCsv").addEventListener("click",csv);
+  Array.prototype.slice.call($("result").querySelectorAll("tr.clickable")).forEach(function(tr){
+    tr.addEventListener("click",function(){ showSrc(+tr.dataset.i); });
+    tr.addEventListener("keydown",function(e){ if(e.key==="Enter"||e.key===" "){ e.preventDefault(); showSrc(+tr.dataset.i); } });
+  });
+}
+function showSrc(i){
+  var r=lastRows.rows[i], lines=r.doc.text.split(/\r?\n/);
+  var hot={}; Object.keys(r.warn).forEach(function(k){ if(r.at[k]>=0) hot[r.at[k]]=r.warn[k]; });
+  var h='<h2>원문: '+esc(r.doc.name)+'</h2><pre id="src">'+lines.map(function(l,n){ return hot[n]!==undefined?'<mark>'+esc(l)+'   ← '+esc(hot[n])+'</mark>':esc(l); }).join("\n")+'</pre>';
+  var miss=Object.keys(r.warn).filter(function(k){return r.at[k]<0;});
+  if(miss.length) h+='<p class="hint">원문에 없는 항목: '+esc(miss.join(", "))+'</p>';
+  $("srcbox").innerHTML=h; $("srcbox").scrollIntoView({behavior:"smooth",block:"nearest"});
+}
+function csv(){
+  var R=lastRows, head=["문서"].concat(R.fields,["검증"]);
+  var q=function(s){ s=String(s==null?"":s); return /[",\n]/.test(s)?'"'+s.replace(/"/g,'""')+'"':s; };
+  var lines=[head.map(q).join(",")];
+  R.rows.forEach(function(r){
+    lines.push([r.doc.name].concat(R.fields.map(function(f){return r.v[f];}),[r.real.length?"경고: "+r.real.join(" / "):"통과"]).map(q).join(","));
+  });
+  var text=lines.join("\n");
+  var box=$("srcbox");
+  box.innerHTML='<h2>CSV</h2><p class="hint">복사해서 엑셀·구글 시트에 붙여 넣거나, 메모장에 붙여 넣고 .csv로 저장하세요. 파일 저장은 브라우저에서 막힐 수 있어요.</p><textarea id="csvText" rows="8" readonly style="width:100%;font:13px/1.5 ui-monospace,Consolas,monospace;padding:8px;border:1px solid var(--line);border-radius:8px;background:var(--bg);color:var(--ink)"></textarea><div class="bar" style="margin-top:8px"><button id="btnCopy" class="primary">복사</button><span id="copyMsg" class="hint"></span></div>';
+  var ta=$("csvText"); ta.value=text; ta.focus(); ta.select();
+  $("btnCopy").addEventListener("click",function(){
+    var done=function(){ $("copyMsg").textContent="복사했어요."; };
+    var fail=function(){ ta.focus(); ta.select(); $("copyMsg").textContent="자동 복사가 막혔어요. 선택된 글자를 Ctrl+C로 복사하세요."; };
+    try{ navigator.clipboard.writeText(text).then(done,fail); }catch(e){ fail(); }
+  });
+  try{
+    var blob=new Blob(["﻿"+lines.join("\r\n")],{type:"text/csv;charset=utf-8"});
+    var a=document.createElement("a"); a.href=URL.createObjectURL(blob); a.download="dochestra-result.csv";
+    document.body.appendChild(a); a.click(); a.remove(); setTimeout(function(){URL.revokeObjectURL(a.href);},1000);
+  }catch(e){}
+}
+$("btnRun").addEventListener("click",run);
+render();
+if(!getChain().err) run();
+})();
+</script>
+</body>
+</html>
